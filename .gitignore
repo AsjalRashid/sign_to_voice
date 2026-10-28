@@ -2,4 +2,11 @@
 .venv
 data
 .dist
-
+TODO.txt
+__pycache__/
+*.pyc
+*.egg-info/
+.egg-info/
+dist/
+build/
+.pytest_cache

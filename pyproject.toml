@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "signvoice"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = ["opencv-python", "numpy", "mediapipe"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]            
+testpaths = ["tests"]
+markers = [
+    "hardware: needs a real webcam or audio device",
+    "model: needs downloaded MediaPipe or LLM/TTS model files",
+    "slow: takes more than a few seconds",
+]
+addopts = "-ra -m 'not hardware and not model'"   
