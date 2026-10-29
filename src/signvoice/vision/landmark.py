@@ -47,7 +47,19 @@ MODEL_URLS = {
  
  
 def ensure_model(filename: str, model_dir: str | Path = "models/mediapipe") -> Path:
-    """Return the path to a model file, downloading it first if it is missing."""
+    """Returns the path to a model file, downloading it first if it is missing.
+
+    Args:
+        filename(str): Name of the model file to find or download.
+        model_dir(str|Path): Target directory where models are stored.
+
+    Returns:
+        The Path instance pointing to the local validated model file.
+
+    Raises:
+        FileNotFoundError: If the filename is not recognized in MODEL_URLS.
+        RuntimeError: If downloading from the remote URL fails.
+    """
     path = Path(model_dir) / filename
     if path.exists():
         return path
@@ -71,6 +83,17 @@ def ensure_model(filename: str, model_dir: str | Path = "models/mediapipe") -> P
 #HELPER FUNCTIONS
 @dataclass
 class LandmarkResults:
+    """A container holding structured tracking outputs from an image pipeline.
+
+    Attributes:
+        features(np.ndarray): Flattened array containing (X, Y, Z) metrics for left hand,
+            right hand, and body pose structures.
+        left_found(bool): True if the left hand is detected in the current frame.
+        right_found(bool): True if the right hand is detected in the current frame.
+        pose_found(bool): True if the body pose points are detected in the frame.
+        inference_ms(float): Duration of the tracking processing block in milliseconds.
+    """
+    
     features: np.ndarray
     left_found: bool
     right_found: bool
@@ -79,13 +102,29 @@ class LandmarkResults:
     
     @property
     def hands_found(self) -> bool:
+        """Evaluates if at least one hand has been tracked in the current frame."""
         return self.left_found or self.right_found
     
 def empty_features() -> np.ndarray :
+    """
+        Generates a clean, zero-initialized numpy feature array.
+
+    Returns:
+        A zeroed 1D array of size FEATURE_DIM with float32 precision.
+    """
     return np.zeros(FEATURE_DIM, dtype=np.float32)
 
 def split_feature_vector(vec:np.ndarray) -> dict[str, np.ndarray]:
-    """Splits the landmark vector into separate vectors for light , right and pose"""
+    """
+    Slices and reshapes a combined feature vector back into component parts.
+
+    Args:
+        vec(np.ndarray): An array whose trailing dimension matches FEATURE_DIM.
+
+    Returns:
+        A dictionary containing keys 'left', 'right', and 'pose' mapped to arrays 
+        reshaped into spatial coordinates of shape (..., N, 3).
+    """
     leading_dims = vec.shape[:-1]
     
     return{
@@ -95,7 +134,17 @@ def split_feature_vector(vec:np.ndarray) -> dict[str, np.ndarray]:
     }
 
 def _to_xyz(landmarks) -> np.ndarray:
-    """Return the x, y and z coordianted of a landmark detection"""
+    """
+    Returns the x, y and z coordianted of a landmark detection
+    
+    Args:
+            landmarks: An iterable collection of MediaPipe landmark instances.
+    
+    Returns:
+        A float32 matrix of shape (num_points, 3) containing normalized X, Y, Z 
+        coordinates.
+    
+    """
     return np.array([[p.x, p.y, p.z] for p in landmarks], dtype=np.float32)
 
 #Extractor 
@@ -106,6 +155,14 @@ RUNNING_MODES = {
 }
 
 class LandmarkExtractor: 
+    """
+    A wrapper for managing MediaPipe Hand and Pose landmarker models.
+
+    Handles structural setup, operational runtime states, model orchestration,
+    and concurrent model inference processing loops.
+    
+    """
+        
     def __init__(self,
                  model_dir: str|Path = "models\mediapipe",
                  hand_model: str = 'hand_landmarker.task',
@@ -116,6 +173,23 @@ class LandmarkExtractor:
                  swap_handedness: bool = False,
                  mode: str = "video"
                  ):
+        """
+        Initializes the hand and pose landmarkers with specific metrics.
+
+        Args:
+            model_dir(str|Path): Local path where model assets reside or will be saved.
+            hand_model(str): Filename string of the target hand landmarker asset.
+            pose_model(str): Filename string of the target pose landmarker asset. If 
+                evaluates to empty or None, pose tracking is bypassed.
+            min_detect_conf(float): Minimum confidence score for detection validation.
+            min_presence_conf(float): Minimum confidence score for presence signaling.
+            min_tracking_conf(float): Minimum confidence score for tracking stability.
+            swap_handedness(bool): Explicitly mirrors left and right landmarker labels.
+            mode(str): Operational environment framework. Must be "video" or "image".
+
+        Raises:
+            ValueError: If an unsupported mode argument is provided.
+        """
         if mode not in RUNNING_MODES:
             raise ValueError(f"mode must be one of {sorted(RUNNING_MODES)}, got {mode!r}")
         self.mode = mode
@@ -147,18 +221,29 @@ class LandmarkExtractor:
             self._pose = vision.PoseLandmarker.create_from_options(pose_opts)
     
     def close(self) -> None:
+        """Releases allocated resources and terminates active landmarker handles."""        
         for model in (self._hands, self._pose):
             if model is not None:
                 model.close()
         self._hands = self._pose = None 
     
     def __enter__(self) -> 'LandmarkExtractor':
+        """Enters context manager scope."""
         return self 
     
     def __exit__(self, *exc) -> None:
+        """Cleans up active instances when exiting context manager scope."""
         return self.close
 
     def _next_timestamp_ms(self, requested: Optional[int] = None) -> int:
+        """Generates a strictly increasing millisecond timestamp for video streams.
+
+        Args:
+            requested(int): Explicit timestamp override value if supplied.
+
+        Returns:
+            A monotonically increasing millisecond integer value.
+        """
         ts = int(time.perf_counter() *1000) if requested is None else int(requested)
         
         if ts <= self.last_ts_ms:
@@ -168,11 +253,28 @@ class LandmarkExtractor:
         return ts 
     
     def _detect(self, landmarker, frame: np.ndarray, ts: int):
+        """Executes landmarker inference using the active landmarker for detection.
+
+        Args:
+            landmarker: Active MediaPipe landmarker runner client instance.
+            frame: Prepared MediaPipe Image structural wrapper.
+            ts: Calculated incremental video micro-timestamp window reference.
+
+        Returns:
+            MediaPipe detection results object matching the selected running mode.
+        """
         if self.mode == 'video':
             return landmarker.detect_for_video(frame, ts)
         return landmarker.detect(frame)
     
     def process(self, bgr_frame: np.ndarray, ts_ms: Optional[int] = None) -> LandmarkResults:
+        """Processes an incoming image frame to perform raw tracking extraction.
+        Args:
+            bgr_frame(np.ndarray): OpenCV default BGR source image array.
+            ts_ms(int|None): Optional explicit millisecond timestamp tracking marker window.
+        Returns:
+            A LandmarkResults instance holding feature vectors and diagnostic data.
+        """
         t0 = time.perf_counter()
         rgb = np.ascontiguousarray(cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB))
         frame = mp.Image(image_format = mp.ImageFormat.SRGB, data = rgb)
@@ -203,7 +305,13 @@ class LandmarkExtractor:
         )
     
     def _assign_hands(self, res) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        """Map detected hands to (left, right) using MediaPipe's handedness labels."""
+        """Map detected hands to (left, right) using MediaPipe's handedness labels.
+        Args:
+            res: Direct return output container from a HandLandmarker execution logic block.
+        Returns:
+            A tuple of (left_hand, right_hand) where each element is either a numpy float32 coordinate matrix or 
+            None if missing.
+        """
         hands = []
         for landmarks, handedness in zip(res.hand_landmarks, res.handedness):
             label = handedness[0].category_name          # "Left" or "Right"
@@ -226,6 +334,11 @@ class LandmarkExtractor:
         return left, right
     
 def draw_landmarks(frame: np.ndarray, res: LandmarkResults) -> None:
+    """Draws tracking connections and landmark nodes directly onto a frame canvas.
+    Args:
+        frame(np.ndarray): The BGR numpy frame matrix canvas where spatial lines are written.
+        res(LandmarkerResult): Completed structural LandmarkResults packet container.
+    """
     h,w = frame.shape[:2]
     blocks = split_feature_vector(res.features)
 
