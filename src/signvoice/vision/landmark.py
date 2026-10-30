@@ -171,7 +171,8 @@ class LandmarkExtractor:
                  min_presence_conf: float = 0.5,
                  min_tracking_conf: float = 0.5,
                  swap_handedness: bool = False,
-                 mode: str = "video"
+                 mode: str = "video",
+                 frame_interval: int = 3,
                  ):
         """
         Initializes the hand and pose landmarkers with specific metrics.
@@ -186,6 +187,7 @@ class LandmarkExtractor:
             min_tracking_conf(float): Minimum confidence score for tracking stability.
             swap_handedness(bool): Explicitly mirrors left and right landmarker labels.
             mode(str): Operational environment framework. Must be "video" or "image".
+            frame_interval(int): Specifies after how many frames to run the pose detection model.
 
         Raises:
             ValueError: If an unsupported mode argument is provided.
@@ -195,6 +197,10 @@ class LandmarkExtractor:
         self.mode = mode
         running_mode = RUNNING_MODES[mode]
         self.swap_handedness = swap_handedness
+        self.frame_interval = frame_interval
+        
+        self._processed_frames = 0
+        self._last_pose_xyz = None
         
         self.last_ts_ms = 0 
         
@@ -284,10 +290,17 @@ class LandmarkExtractor:
         
         pose_xyz = None
         if self._pose is not None:
-            pose_res = self._detect(self._pose, frame, ts)
-            if pose_res.pose_landmarks:
-                pose_xyz = _to_xyz(pose_res.pose_landmarks[0])[list(POSE_IDX)] 
-            
+            if (self._processed_frames % self.frame_interval) == 0: # Gates pose detection to run every N frame    
+                pose_res = self._detect(self._pose, frame, ts)
+                self._last_pose_xyz = (
+                    _to_xyz(pose_res.pose_landmarks[0])[list(POSE_IDX)]
+                    if pose_res.pose_landmarks
+                    else None
+                )
+            pose_xyz = self._last_pose_xyz
+        
+        self._processed_frames += 1 
+        
         features = empty_features()
         if left is not None:
             features[LEFT_HAND] = left.ravel()
