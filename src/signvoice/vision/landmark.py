@@ -239,7 +239,7 @@ class LandmarkExtractor:
     
     def __exit__(self, *exc) -> None:
         """Cleans up active instances when exiting context manager scope."""
-        return self.close
+        return self.close()
 
     def _next_timestamp_ms(self, requested: Optional[int] = None) -> int:
         """Generates a strictly increasing millisecond timestamp for video streams.
@@ -275,9 +275,11 @@ class LandmarkExtractor:
     
     def process(self, bgr_frame: np.ndarray, ts_ms: Optional[int] = None) -> LandmarkResults:
         """Processes an incoming image frame to perform raw tracking extraction.
+        
         Args:
             bgr_frame(np.ndarray): OpenCV default BGR source image array.
             ts_ms(int|None): Optional explicit millisecond timestamp tracking marker window.
+        
         Returns:
             A LandmarkResults instance holding feature vectors and diagnostic data.
         """

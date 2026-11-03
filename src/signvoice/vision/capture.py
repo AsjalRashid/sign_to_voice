@@ -175,6 +175,7 @@ class ThreadedCapture():
             last_timestamp = now 
             
             with self._cond:
+                # Notifies read() that a new frame is avaliable 
                 self._count +=1
                 self._frame = Frame(self._count, now, frame)
                 self._fps = inst_fps if self._fps == 0 else 0.9 * self._fps + 0.1 * inst_fps # Calculates Exponential Moving Average
