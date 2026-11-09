@@ -271,7 +271,7 @@ def centeralize(features: np.ndarray, ref: Reference) -> np.ndarray:
     """
         
     pts = as_points(features)
-    keep = detected(features) & ref.valid
+    keep = detected(pts) & ref.valid
     
     return _flatten(np.where(keep[..., None], pts - ref.origin, 0.0))
 
@@ -320,7 +320,7 @@ def _mirroed_ordering() -> np.ndarray:
         a, b = POSE_START + POSE_POS[left], POSE_START + POSE_POS[right]                                # Determines the index of the paired points to swap
         order[a], order[b] = b, a                                                                       # Swaps the values at indecies a and b 
     
-    return np.ndarray(order)
+    return np.asarray(order, dtype=np.intp)
     
     
 MIRROR_ORDER = _mirroed_ordering() # Calculates the ordering once when the module is imported.
@@ -432,6 +432,6 @@ def normalise(features: np.ndarray, reference: Callable[..., Reference] = body_r
         ValueError: If the input's final dimension is not FEATURE_DIM.
     """
     
-    feats = _stretch_x(_as_float32(feats), aspect)
-    ref = reference(feats)
-    return scale(centeralize(feats, ref), ref)
+    features = _stretch_x(_as_float32(features), aspect)
+    ref = reference(features)
+    return scale(centeralize(features, ref), ref)
