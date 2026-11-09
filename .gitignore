@@ -10,3 +10,8 @@ __pycache__/
 dist/
 build/
 .pytest_cache
+src\signvoice\ui 
+src\signvoice\app.py
+docs
+successful_images.txt
+scripts\folder_setup.py
